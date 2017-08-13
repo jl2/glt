@@ -171,6 +171,9 @@ void main()
 (defun render (object)
   "Render a gl-object."
   (with-slots (vao ebo count shaders shader-program) object
+    (gl:enable :line-smooth :polygon-smooth)
+    (gl:clear-color 0.0 0.0 0.0 1.0)
+    (gl:clear :color-buffer :depth-buffer)
     (gl:use-program shader-program)
     (gl:bind-vertex-array vao)
     (%gl:draw-elements :triangles count :unsigned-int ebo)
@@ -186,13 +189,12 @@ void main()
                             :width 1280
                             :height 1024
                             :decorated nil
-                            :monitor (glfw:get-primary-monitor)
+                            ;:monitor (glfw:get-primary-monitor)
                             :opengl-profile :opengl-core-profile
                             :context-version-major 3
                             :context-version-minor 2
                             :opengl-forward-compat t
-                            :resizable nil
-                            )
+                            :resizable nil)
 
     (setf %gl:*gl-get-proc-address* #'get-proc-address)
     (set-key-callback 'quit-on-escape)
@@ -202,8 +204,8 @@ void main()
     (let* (
            ;; Packed array:  position       normal         color 
            (vertices     #(-0.5  0.5 0.0  0.0 0.0 1.0  1.0 0.0 0.0 1.0
-                            0.5  0.5 0.0  0.0 0.0 1.0  0.0 1.0 0.0 1.0
-                            0.5 -0.5 0.0  0.0 0.0 1.0  0.0 0.0 1.0 1.0
+                           0.5  0.5 0.0  0.0 0.0 1.0  0.0 1.0 0.0 1.0
+                           0.5 -0.5 0.0  0.0 0.0 1.0  0.0 0.0 1.0 1.0
                            -0.5 -0.5 0.0  0.0 0.0 1.0  0.5 0.0 0.5 1.0))
 
            (indices      #(0 1 2 2 3 0))
