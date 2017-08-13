@@ -15,7 +15,7 @@
 ;; Simple vertex shader expecting position, normal, and color in a vertex array
 (defparameter *vertex-shader-text*
 "
-#version 150 core
+#version 330 core
 
 in vec3 position;
 in vec3 normal;
@@ -32,7 +32,7 @@ void main()
 ;; Simple fragment shader that simply assigns the input color to the output color
 (defparameter *fragment-shader-text*
 "
-#version 150 core
+#version 330 core
 
 in vec4 Color;
 out vec4 outColor;
@@ -185,77 +185,82 @@ void main()
     (set-window-should-close)))
 
 (defun real-main ()
-  (with-init-window (:title "OpenGL Shader Test"
-                            :width 1280
-                            :height 1024
-                            :decorated nil
-                            ;:monitor (glfw:get-primary-monitor)
-                            :opengl-profile :opengl-core-profile
-                            :context-version-major 3
-                            :context-version-minor 2
-                            :opengl-forward-compat t
-                            :resizable nil)
+  (with-init
+    (let* ((monitor (glfw:get-primary-monitor))
+           (cur-mode (glfw:get-video-mode monitor))
+           (cur-width (getf cur-mode '%cl-glfw3:width))
+           (cur-height (getf cur-mode '%cl-glfw3:height)))
+      (with-window (:title "OpenGL Shader Test"
+                           :width cur-width
+                           :height cur-height
+                           :decorated nil
+                           :monitor monitor
+                           :opengl-profile :opengl-core-profile
+                           :context-version-major 3
+                           :context-version-minor 3
+                           :opengl-forward-compat t
+                           :resizable nil)
 
-    (setf %gl:*gl-get-proc-address* #'get-proc-address)
-    (set-key-callback 'quit-on-escape)
-    (gl:clear-color 0 0 0 0)
+        (setf %gl:*gl-get-proc-address* #'get-proc-address)
+        (set-key-callback 'quit-on-escape)
+        (gl:clear-color 0 0 0 0)
 
-    ;; This is still a bit ugly
-    (let* (
-           ;; Packed array:  position       normal         color 
-           (vertices     #(-0.5  0.5 0.0  0.0 0.0 1.0  1.0 0.0 0.0 1.0
-                           0.5  0.5 0.0  0.0 0.0 1.0  0.0 1.0 0.0 1.0
-                           0.5 -0.5 0.0  0.0 0.0 1.0  0.0 0.0 1.0 1.0
-                           -0.5 -0.5 0.0  0.0 0.0 1.0  0.5 0.0 0.5 1.0))
+        ;; This is still a bit ugly
+        (let* (
+               ;; Packed array:  position       normal         color 
+               (vertices     #(-0.5  0.5 0.0  0.0 0.0 1.0  1.0 0.0 0.0 1.0
+                               0.5  0.5 0.0  0.0 0.0 1.0  0.0 1.0 0.0 1.0
+                               0.5 -0.5 0.0  0.0 0.0 1.0  0.0 0.0 1.0 1.0
+                               -0.5 -0.5 0.0  0.0 0.0 1.0  0.5 0.0 0.5 1.0))
 
-           (indices      #(0 1 2 2 3 0))
+               (indices      #(0 1 2 2 3 0))
 
-           ;; Describe how the vertex shader input data is packed in
-           ;; the vertex array
-           (float-size   (cffi:foreign-type-size :float))
-           (stride       (* (+ 3 3 4) float-size))
-           (vert-offset  (* 0 float-size))
-           (norm-offset  (* 3 float-size))
-           (color-offset (* 6 float-size))
-           (vertex-inputs (list 
-                           (make-shader-input :name "position"
-                                              :type :float
-                                              :count 3
-                                              :stride stride
-                                              :offset vert-offset)
-                           (make-shader-input :name "normal"
-                                              :type :float
-                                              :count 3
-                                              :stride stride
-                                              :offset norm-offset)
-                           (make-shader-input :name "color"
-                                              :type :float
-                                              :count 4
-                                              :stride stride
-                                              :offset color-offset)))
+               ;; Describe how the vertex shader input data is packed in
+               ;; the vertex array
+               (float-size   (cffi:foreign-type-size :float))
+               (stride       (* (+ 3 3 4) float-size))
+               (vert-offset  (* 0 float-size))
+               (norm-offset  (* 3 float-size))
+               (color-offset (* 6 float-size))
+               (vertex-inputs (list 
+                               (make-shader-input :name "position"
+                                                  :type :float
+                                                  :count 3
+                                                  :stride stride
+                                                  :offset vert-offset)
+                               (make-shader-input :name "normal"
+                                                  :type :float
+                                                  :count 3
+                                                  :stride stride
+                                                  :offset norm-offset)
+                               (make-shader-input :name "color"
+                                                  :type :float
+                                                  :count 4
+                                                  :stride stride
+                                                  :offset color-offset)))
 
-           ;; Create the vertex and fragment shaders
-           (vert-shader (make-shader :text *vertex-shader-text*
-                                     :type :vertex-shader
-                                     :inputs vertex-inputs
-                                     :outputs nil))
+               ;; Create the vertex and fragment shaders
+               (vert-shader (make-shader :text *vertex-shader-text*
+                                         :type :vertex-shader
+                                         :inputs vertex-inputs
+                                         :outputs nil))
 
-           (frag-shader (make-shader :text *fragment-shader-text*
-                                     :type :fragment-shader
-                                     :inputs nil
-                                     :outputs (list "outColor")))
+               (frag-shader (make-shader :text *fragment-shader-text*
+                                         :type :fragment-shader
+                                         :inputs nil
+                                         :outputs (list "outColor")))
 
-           ;; Create and initialize an OpenGL opbject
-           (scene (create-gl-object vertices indices (list vert-shader frag-shader))))
+               ;; Create and initialize an OpenGL opbject
+               (scene (create-gl-object vertices indices (list vert-shader frag-shader))))
 
-      ;; The 'event loop' 
-      (loop until (window-should-close-p)
-         do (render scene)
-         do (swap-buffers)
-         do (poll-events))
+          ;; The 'event loop' 
+          (loop until (window-should-close-p)
+             do (render scene)
+             do (swap-buffers)
+             do (poll-events))
 
-      ;; Finally clean up
-      (cleanup scene))))
+          ;; Finally clean up
+          (cleanup scene))))))
 
 (defun main (&optional (in-thread #+os-macosx t))
   ;; OSX requires that GUI interaction is done in the main thread.
