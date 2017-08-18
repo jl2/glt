@@ -20,12 +20,73 @@
 in vec3 position;
 in vec3 normal;
 in vec4 color;
+
 out vec4 Color;
+
+uniform float time;
 
 void main()
 {
-    Color = color;
-    gl_Position = vec4(normal + position, 1.0);
+
+    float scale_factor = 0.25;
+    float pi = 3.141592654;
+    float x_angle = 0.0;
+    float y_angle = 0.0;
+    float z_angle = time;
+
+    const int num_lights = 3;
+    vec3[num_lights] light_positions;
+    light_positions[0] = vec3(10.0, 0.0, 0.0);
+    light_positions[1] = vec3(0.0, 10.0, 0.0);
+    light_positions[2] = vec3(0.0, 0.0, 10.0);
+
+    vec4[num_lights] light_colors;
+    light_colors[0] = vec4(1.0, 0.0, 0.0, 1.0);
+    light_colors[1] = vec4(0.0, 1.0, 0.0, 1.0);
+    light_colors[2] = vec4(0.0, 0.0, 1.0, 1.0);
+
+    mat4 translate = mat4(1.0, 0.0, 0.0, 0.0,
+                      0.0, 1.0, 0.0, 0.0,
+                      0.0, 0.0, 1.0, 0.0,
+                      0.0, 0.0, 0.0, 1.0);
+
+    mat4 x_rotate = mat4(1.0, 0.0, 0.0, 0.0,
+                         0.0, cos(x_angle), -sin(x_angle), 0.0,
+                         0.0, sin(x_angle), cos(x_angle), 0.0,
+                         0.0, 0.0, 0.0, 1.0);
+    mat4 y_rotate = mat4(cos(y_angle), 0.0, sin(y_angle), 0.0,
+                     0.0, 1.0, 0.0, 0.0,
+                     -sin(y_angle), 0.0, cos(y_angle), 0.0,
+                     0.0, 0.0, 0.0, 1.0);
+
+    mat4 z_rotate = mat4(cos(z_angle), -sin(z_angle), 0.0, 0.0,
+                     sin(z_angle), cos(z_angle), 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0);
+
+    mat4 scale = mat4(scale_factor, 0.0, 0.0, 0.0,
+                  0.0, scale_factor, 0.0, 0.0,
+                  0.0, 0.0, scale_factor, 0.0,
+                  0.0, 0.0, 0.0, scale_factor);
+
+    mat4 xform =  z_rotate * y_rotate * x_rotate * translate;
+    vec4 xformed_normal = transpose(inverse(xform)) * vec4(normalize(normal), 1.0);
+//    vec4 color = xformed_normal;
+
+    //float u = position.x + time
+    //float v = position.y + time
+    //gl_Position = vec4(sin(u) * sin(v), cos(u) * sin(v), cos(v), 1.0)
+
+    vec4 point = xform * vec4(scale_factor*position, 1.0);
+    vec4 ncolor = vec4(0,0,0, 1.0);
+
+    for (int i=0; i < num_lights; ++i)
+    {
+        vec4 L = normalize(point - xform * vec4(light_positions[i], 1.0));
+        ncolor += max(0,dot(L, xformed_normal))* light_colors[i];
+    }
+    Color = ncolor * color;
+    gl_Position = point;
 }
 ")
 
@@ -141,6 +202,13 @@ void main()
            do (gl:bind-frag-data-location shader-program idx output)))
 
       (gl:link-program shader-program)
+      (let ((status (gl:get-program shader-program :link-status)))
+        (format t "link-program: ~a~%~a~%" status(gl:get-program-info-log shader-program)))
+
+      (gl:validate-program shader-program)
+      (let ((status (gl:get-program shader-program :validate-status)))
+        (format t "validate-program: ~a~%~a~%" status (gl:get-program-info-log shader-program)))
+
       (gl:use-program shader-program)
 
       (dolist (shader shaders)
@@ -148,6 +216,7 @@ void main()
            for input in (shader-inputs shader)
            for idx from 0
            do (with-slots (name count type stride offset attrib) input
+                (format t "~a~%" name)
                 (setf attrib (gl:get-attrib-location shader-program name))
                 (gl:enable-vertex-attrib-array attrib)
                 (gl:vertex-attrib-pointer attrib count type :FALSE stride offset)))))
@@ -171,7 +240,9 @@ void main()
 (defun render (object)
   "Render a gl-object."
   (with-slots (vao ebo count shaders shader-program) object
-    (gl:enable :line-smooth :polygon-smooth)
+    (gl:uniformf (gl:get-uniform-location shader-program "time") (glfw:get-time))
+    (gl:enable :line-smooth :polygon-smooth
+               :depth-test :depth-clamp)
     (gl:clear-color 0.0 0.0 0.0 1.0)
     (gl:clear :color-buffer :depth-buffer)
     (gl:use-program shader-program)
@@ -184,12 +255,51 @@ void main()
   (when (and (eq key :escape) (eq action :press))
     (set-window-should-close)))
 
-(defun real-main ()
+(defun r-random (&key (min 0.0f0) (max 1.0f0))
+  (+ min (random (- max min))))
+
+(defun real-main (fname)
   (with-init
     (let* ((monitor (glfw:get-primary-monitor))
            (cur-mode (glfw:get-video-mode monitor))
            (cur-width (getf cur-mode '%cl-glfw3:width))
-           (cur-height (getf cur-mode '%cl-glfw3:height)))
+           (cur-height (getf cur-mode '%cl-glfw3:height))
+           (stl-data (stl:read-stl fname))
+
+           (float-size   (cffi:foreign-type-size :float))
+           (stride       (* (+ 3 3 4) float-size))
+           (vert-offset  (* 0 float-size))
+           (norm-offset  (* 3 float-size))
+           (color-offset (* 6 float-size))
+
+           (vertex-inputs (list 
+                           (make-shader-input :name "position"
+                                              :type :float
+                                              :count 3
+                                              :stride stride
+                                              :offset vert-offset)
+                           (make-shader-input :name "normal"
+                                              :type :float
+                                              :count 3
+                                              :stride stride
+                                              :offset norm-offset)
+                           (make-shader-input :name "color"
+                                              :type :float
+                                              :count 4
+                                              :stride stride
+                                              :offset color-offset)
+                           ))
+
+           ;; Create the vertex and fragment shaders
+           (vert-shader (make-shader :text *vertex-shader-text*
+                                     :type :vertex-shader
+                                     :inputs vertex-inputs
+                                     :outputs nil))
+
+           (frag-shader (make-shader :text *fragment-shader-text*
+                                     :type :fragment-shader
+                                     :inputs nil
+                                     :outputs (list "outColor"))))
       (with-window (:title "OpenGL Shader Test"
                            :width cur-width
                            :height cur-height
@@ -205,69 +315,23 @@ void main()
         (set-key-callback 'quit-on-escape)
         (gl:clear-color 0 0 0 0)
 
-        ;; This is still a bit ugly
-        (let* (
-               ;; Packed array:  position       normal         color 
-               (vertices     #(-0.5  0.5 0.0  0.0 0.0 1.0  1.0 0.0 0.0 1.0
-                               0.5  0.5 0.0  0.0 0.0 1.0  0.0 1.0 0.0 1.0
-                               0.5 -0.5 0.0  0.0 0.0 1.0  0.0 0.0 1.0 1.0
-                               -0.5 -0.5 0.0  0.0 0.0 1.0  0.5 0.0 0.5 1.0))
+        (multiple-value-bind (vertices indices) (stl:to-opengl stl-data :red 1.0 :green 1.0 :blue 1.0 :alpha 1.0)
+          (let ((scene (create-gl-object vertices indices (list vert-shader frag-shader))))
+            ;; The 'event loop' 
+            (loop until (window-should-close-p)
+               do (render scene)
+               do (swap-buffers)
+               do (poll-events))
 
-               (indices      #(0 1 2 2 3 0))
+            ;; Finally clean up
+            (cleanup scene)))))))
 
-               ;; Describe how the vertex shader input data is packed in
-               ;; the vertex array
-               (float-size   (cffi:foreign-type-size :float))
-               (stride       (* (+ 3 3 4) float-size))
-               (vert-offset  (* 0 float-size))
-               (norm-offset  (* 3 float-size))
-               (color-offset (* 6 float-size))
-               (vertex-inputs (list 
-                               (make-shader-input :name "position"
-                                                  :type :float
-                                                  :count 3
-                                                  :stride stride
-                                                  :offset vert-offset)
-                               (make-shader-input :name "normal"
-                                                  :type :float
-                                                  :count 3
-                                                  :stride stride
-                                                  :offset norm-offset)
-                               (make-shader-input :name "color"
-                                                  :type :float
-                                                  :count 4
-                                                  :stride stride
-                                                  :offset color-offset)))
-
-               ;; Create the vertex and fragment shaders
-               (vert-shader (make-shader :text *vertex-shader-text*
-                                         :type :vertex-shader
-                                         :inputs vertex-inputs
-                                         :outputs nil))
-
-               (frag-shader (make-shader :text *fragment-shader-text*
-                                         :type :fragment-shader
-                                         :inputs nil
-                                         :outputs (list "outColor")))
-
-               ;; Create and initialize an OpenGL opbject
-               (scene (create-gl-object vertices indices (list vert-shader frag-shader))))
-
-          ;; The 'event loop' 
-          (loop until (window-should-close-p)
-             do (render scene)
-             do (swap-buffers)
-             do (poll-events))
-
-          ;; Finally clean up
-          (cleanup scene))))))
-
-(defun main (&optional (in-thread #+os-macosx t))
+(defun main (fname &optional (in-thread #+os-macosx t))
   ;; OSX requires that GUI interaction is done in the main thread.
   ;; On other platforms, it's easier to debug in Emacs/Slime when
   ;; everything stays in the Slime interaction thread.
   (if in-thread
       (trivial-main-thread:with-body-in-main-thread ()
-        (real-main))
-      (real-main)))
+        (real-main fname))
+      (real-main fname)))
 

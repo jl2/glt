@@ -8,7 +8,8 @@
   :license "ISC (BSD-like)"
   :depends-on (#:cl-glfw3
                #:cl-opengl
-               #:trivial-main-thread)
+               #:trivial-main-thread
+               #:stl)
   :serial t
   :components ((:file "package")
                (:file "glt")))
